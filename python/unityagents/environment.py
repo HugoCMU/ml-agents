@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 class UnityEnvironment(object):
-    def __init__(self, file_name, worker_id=0,
-                 base_port=5005, curriculum=None):
+    def __init__(self, file_name=None, worker_id=0,
+                 base_port=5005, curriculum=None, host_ip=None):
         """
         Starts a new unity environment and establishes a connection with the environment.
         Notice: Currently communication between Unity and Python takes place over an open socket without authentication.
@@ -35,16 +35,18 @@ class UnityEnvironment(object):
 
         atexit.register(self.close)
         self.port = base_port + worker_id
-        self._buffer_size = 12000
+        self._buffer_size = 120000
         self._python_api = "API-2"
+        self._socket_timeout = 30
         self._loaded = False
         self._open_socket = False
+        self.host_ip = host_ip or "localhost"
 
         try:
             # Establish communication socket
             self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self._socket.bind(("localhost", self.port))
+            self._socket.bind((self.host_ip, self.port))
             self._open_socket = True
         except socket.error:
             self._open_socket = True
@@ -54,34 +56,41 @@ class UnityEnvironment(object):
                                "or use a different worker number.".format(str(worker_id)))
 
         cwd = os.getcwd()
-        file_name = (file_name.strip()
-                     .replace('.app', '').replace('.exe', '').replace('.x86_64', '').replace('.x86', ''))
-        true_filename = os.path.basename(os.path.normpath(file_name))
         launch_string = None
-        if platform == "linux" or platform == "linux2":
-            candidates = glob.glob(os.path.join(cwd, file_name) + '.x86_64')
-            if len(candidates) == 0:
-                candidates = glob.glob(os.path.join(cwd, file_name) + '.x86')
-            if len(candidates) == 0:
-                candidates = glob.glob(file_name + '.x86_64')
-            if len(candidates) == 0:
-                candidates = glob.glob(file_name + '.x86')
-            if len(candidates) > 0:
-                launch_string = candidates[0]
+        true_filename = None
+        if file_name:  # No filename needed in external host mode
+            file_name = (file_name.strip()
+                         .replace('.app', '').replace('.exe', '').replace('.x86_64', '').replace('.x86', ''))
+            true_filename = os.path.basename(os.path.normpath(file_name))
 
-        elif platform == 'darwin':
-            candidates = glob.glob(os.path.join(cwd, file_name + '.app', 'Contents', 'MacOS', true_filename))
-            if len(candidates) == 0:
-                candidates = glob.glob(os.path.join(file_name + '.app', 'Contents', 'MacOS', true_filename))
-            if len(candidates) > 0:
-                launch_string = candidates[0]
-        elif platform == 'win32':
-            candidates = glob.glob(os.path.join(cwd, file_name + '.exe'))
-            if len(candidates) == 0:
-                candidates = glob.glob(file_name + '.exe')
-            if len(candidates) > 0:
-                launch_string = candidates[0]
-        if launch_string is None:
+            if platform == "linux" or platform == "linux2":
+                candidates = glob.glob(os.path.join(cwd, file_name) + '.x86_64')
+                if len(candidates) == 0:
+                    candidates = glob.glob(os.path.join(cwd, file_name) + '.x86')
+                if len(candidates) == 0:
+                    candidates = glob.glob(file_name + '.x86_64')
+                if len(candidates) == 0:
+                    candidates = glob.glob(file_name + '.x86')
+                if len(candidates) > 0:
+                    launch_string = candidates[0]
+
+            elif platform == 'darwin':
+                candidates = glob.glob(os.path.join(cwd, file_name + '.app', 'Contents', 'MacOS', true_filename))
+                if len(candidates) == 0:
+                    candidates = glob.glob(os.path.join(file_name + '.app', 'Contents', 'MacOS', true_filename))
+                if len(candidates) > 0:
+                    launch_string = candidates[0]
+            elif platform == 'win32':
+                candidates = glob.glob(os.path.join(cwd, file_name + '.exe'))
+                if len(candidates) == 0:
+                    candidates = glob.glob(file_name + '.exe')
+                if len(candidates) > 0:
+                    launch_string = candidates[0]
+
+        if host_ip:
+            logger.warning("Running in external host mode. "
+                           "You have %d seconds to launch Unity on the other side." % self._socket_timeout)
+        elif launch_string is None:
             self.close()
             raise UnityEnvironmentException("Couldn't launch the {0} environment. "
                                             "Provided filename does not match any environments."
@@ -104,7 +113,7 @@ class UnityEnvironment(object):
                 raise UnityEnvironmentException(
                     "The Unity environment took too long to respond. Make sure {} does not need user interaction to "
                     "launch and that the Academy and the external Brain(s) are attached to objects in the Scene."
-                    .format(str(file_name)))
+                        .format(str(file_name)))
 
             if "apiNumber" not in p:
                 self._unity_api = "API-1"
