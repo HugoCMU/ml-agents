@@ -37,7 +37,7 @@ class UnityEnvironment(object):
         self._socket_timeout = 30
         self._loaded = False
         self._open_socket = False
-        self.host_ip = host_ip or "localhost"
+        self.host_ip = host_ip or 'localhost'
 
         try:
             # Establish communication socket
@@ -52,9 +52,10 @@ class UnityEnvironment(object):
                                "You may need to manually close a previously opened environment "
                                "or use a different worker number.".format(str(worker_id)))
 
-        if not host_ip:
+        if host_ip:
             logger.warning("Running in external host mode. "
                            "You have %d seconds to launch Unity on the other side." % self._socket_timeout)
+        else:
             cwd = os.getcwd()
             try:
                 true_filename = os.path.basename(os.path.normpath(file_name))
